@@ -1,5 +1,14 @@
 package cores
 
+import (
+	"fmt"
+	"k8s.io/kubernetes/schd/aladdin/data"
+	"k8s.io/kubernetes/schd/aladdin/kmeans"
+	"math/rand"
+	"sort"
+	"strconv"
+)
+
 /************************************************************************************************************
  *
  * @copyright Institute of Software, CAS
@@ -101,4 +110,169 @@ func MaxFlowExample() *Graph {
 	graph.AddEdge(fg)
 
 	return graph
+}
+
+func CpuMemCapacityExample() *Graph {
+	graph := NewGraph()
+	a := NewVertex("A")
+	b := NewVertex("B")
+	c := NewVertex("C")
+	d := NewVertex("D")
+	e := NewVertex("E")
+	f := NewVertex("F")
+	g := NewVertex("G")
+	h := NewVertex("H")
+	i := NewVertex("I")
+
+	graph.AddVertex(a)
+	graph.AddVertex(b)
+	graph.AddVertex(c)
+	graph.AddVertex(d)
+	graph.AddVertex(e)
+	graph.AddVertex(f)
+	graph.AddVertex(g)
+	graph.AddVertex(h)
+	graph.AddVertex(i)
+
+
+	ab := NewCostEdge(1, NewCpuMemCapacity(8,8), a, b)
+	ac := NewCostEdge(1, NewCpuMemCapacity(4,8), a, c)
+	ad := NewCostEdge(1, NewCpuMemCapacity(4,8), a, d)
+
+	be := NewCostEdge(1, NewCpuMemCapacity(8,8), b, e)
+	bf := NewCostEdge(10, NewCpuMemCapacity(8,8), b, f)
+
+	ce := NewCostEdge(10, NewCpuMemCapacity(4,8), c, e)
+	cf := NewCostEdge(1, NewCpuMemCapacity(4,8), c, f)
+
+
+	de := NewCostEdge(10, NewCpuMemCapacity(4,8), d, e)
+	df := NewCostEdge(1, NewCpuMemCapacity(4,8), d, f)
+
+	eg := NewCostEdge(1, NewCpuMemCapacity(8,8), e, g)
+	fh := NewCostEdge(1, NewCpuMemCapacity(8, 16), f, h)
+
+	gi := NewCostEdge(1, NewCpuMemCapacity(8,8), g, i)
+	hi := NewCostEdge(1, NewCpuMemCapacity(8, 16), h, i)
+
+	graph.AddEdge(ab)
+	graph.AddEdge(ac)
+	graph.AddEdge(ad)
+
+	graph.AddEdge(be)
+	graph.AddEdge(bf)
+
+	graph.AddEdge(ce)
+	graph.AddEdge(cf)
+
+	graph.AddEdge(de)
+	graph.AddEdge(df)
+
+	graph.AddEdge(eg)
+	graph.AddEdge(fh)
+
+	graph.AddEdge(gi)
+	graph.AddEdge(hi)
+
+	return graph
+
+}
+
+const (
+	TaskNum = 34594
+	NodeNum = 4338
+
+)
+
+func RandomGraphExample() *Graph {
+	graph := NewGraph()
+	source := NewVertex("source")
+	sink := NewVertex("sink")
+	graph.AddVertex(source)
+	graph.AddVertex(sink)
+
+	rand.Seed(42)
+
+
+
+	tasks, nodes := data.ReadDataFromJsonFile()
+
+	// 随机生成任务节点，和从source到他们的边
+	for i := 0; i < TaskNum; i++ {
+		v := NewVertex("task-" + strconv.Itoa(i))
+		e := NewCostEdge(1, NewCpuMemCapacity(tasks[i].Cpu, tasks[i].Mem), source, v)
+		graph.AddVertex(v)
+		graph.AddEdge(e)
+	}
+	// 生成机器节点，和他们到sink的边
+	for i := 0; i < NodeNum; i++ {
+		v := NewVertex("node-" + strconv.Itoa(i))
+		e := NewCostEdge(1, NewCpuMemCapacity(nodes[i].Cpu, nodes[i].Mem), v, sink)
+		graph.AddVertex(v)
+		graph.AddEdge(e)
+		}
+
+
+	//生成聚合节点
+	var sortedNames []string
+	for toSinkEdgeName, _ := range sink.GetInEdges() {
+		sortedNames = append(sortedNames, toSinkEdgeName)
+	}
+
+	sort.Strings(sortedNames)
+	rawData := make([][]float64, len(sortedNames))
+	for i, name := range sortedNames {
+		ee, _:= sink.GetInEdge(name)
+
+		cap := ee.capacity.(*CpuMemCapacity)
+		rawData[i] = []float64{float64(cap.mem) / float64(cap.cpu) / 1000}
+	}
+
+	fmt.Println("End Raw Data")
+	labels, means := kmeans.KMeans(rawData, 9, kmeans.EuclideanDistanceFunction, 0.001)
+	fmt.Println(labels)
+	fmt.Println(means)
+
+	for i := 0; i < len(means); i++ {
+		v := NewVertex("cluster-" + strconv.Itoa(i))
+		graph.AddVertex(v)
+	}
+
+	for i, name := range sortedNames {
+		label := labels[i].ClusterNum
+		ee, _ := sink.GetInEdge(name)
+		vv := ee.GetFrom()
+		cv, _ := graph.GetVertex("cluster-" + strconv.Itoa(label))
+		ce := NewCostEdge(1, NewCpuMemCapacityWithCapacity(ee.GetCapacity()), cv, vv)
+		graph.AddEdge(ce)
+	}
+
+
+	for _, ee := range source.GetOutEdges() {
+		var ids kmeans.IndexDistanceSlice
+		v1 := ee.GetTo()
+		v1Cap := ee.capacity.(*CpuMemCapacity)
+		v1Ratio := kmeans.Vector{float64(v1Cap.mem) / float64(v1Cap.cpu) / 1000}
+		for i := 0; i < len(means); i++ {
+			ids = append(ids, kmeans.IndexDistance{i, kmeans.EuclideanDistanceFunction(v1Ratio, means[i])})
+		}
+		sort.Sort(ids)
+		coff := 1
+		for i := 0; i < len(ids); i++ {
+			cv, _ := graph.GetVertex("cluster-" + strconv.Itoa(ids[i].Index))
+			graph.AddEdge(NewCostEdge(coff, NewCpuMemCapacityWithCapacity(v1Cap), v1, cv))
+			coff *= 2
+		}
+	}
+
+
+
+
+
+	return graph
+
+
+	// 任务到聚合的边
+
+	// 聚合到机器的边
 }

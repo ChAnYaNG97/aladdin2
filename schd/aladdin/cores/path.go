@@ -22,22 +22,22 @@ func NewPath() *Path {
 		edges: list.New()}
 }
 
-func NewInvalidPath() *Path {
-	return &Path{cost: -1,
+	func NewInvalidPath() *Path {
+		return &Path{cost: -1,
 		edges: list.New()}
-}
+	}
 
-func (path *Path) GetCost() int {
-	return path.cost
-}
+	func (path *Path) GetCost() int {
+		return path.cost
+	}
 
-// we would not check parameters
-func (path *Path) AddEdge(edge Edge) {
-	path.cost += edge.cost
- 	//path.edges[edge.name] = *edge
- 	path.edges.PushBack(edge)
-}
+	// we would not check parameters
+	func (path *Path) AddEdge(edge Edge) {
+		path.cost += edge.cost
+		//path.edges[edge.name] = *edge
+		path.edges.PushBack(edge)
+	}
 
-func (path *Path) GetEdges() *list.List {
-	return path.edges
+	func (path *Path) GetEdges() *list.List {
+		return path.edges
 }

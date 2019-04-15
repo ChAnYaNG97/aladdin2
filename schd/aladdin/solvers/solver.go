@@ -258,14 +258,14 @@ func (s *Solver) AvailablePath() cores.Path {
 
 		// if path's cost is -1, then means no path from source to sink
 		if path.GetCost() == -1 {
-			break;
+			break
 		}
 
 		minFlow := s.graph.UpdateGraghForMaxFlow(path)
 
 		flow.AddFlow(minFlow)
 		flow.AddPath(path)
-		s.graph.PrintGragh()
+		//s.graph.PrintGragh()
 	}
 	return flow
   }

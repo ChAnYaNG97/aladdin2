@@ -52,6 +52,11 @@ func (nc AntiSetCapacity) Less(capacity Capacity) bool {
 
 }
 
+func (nc AntiSetCapacity) GreatEqual(capacity Capacity) bool {
+	return true
+
+}
+
 // please check the parameters (capacity) by yourself
 func (nc AntiSetCapacity) Add(capacity Capacity) {
 	oc := capacity.(AntiSetCapacity)

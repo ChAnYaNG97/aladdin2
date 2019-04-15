@@ -52,7 +52,7 @@ func NewGraph() *Graph {
 }
 
 //todo how to construct a greph with pods and nodes
-func (graph *Graph) InitGraphVertex(nodes []*v1.Node,  pods map[string]*v1.Pod) error{
+func (graph *Graph) InitGraphVertex(nodes []*v1.Node, pods map[string]*v1.Pod) error{
 	if nodes == nil || len(nodes) == 0 || pods == nil || len(pods) == 0 {
 		fmt.Printf("pods or nodes con't be empty when constructing map")
 		return errors.New("pods or nodes con't be empty when constructing map")
@@ -67,8 +67,9 @@ func (graph *Graph) InitGraphVertex(nodes []*v1.Node,  pods map[string]*v1.Pod) 
 	for _, pod := range pods {
 		cpu := 0
 		for _, container := range pod.Spec.Containers {
-			cpu = int(container.Resources.Requests.Cpu().Value())
+			cpu += int(container.Resources.Requests.Cpu().Value())
 		}
+
 		vertex := NewVertex(pod.Name)
 		graph.AddVertex(vertex)
 		var edge *Edge
@@ -79,7 +80,6 @@ func (graph *Graph) InitGraphVertex(nodes []*v1.Node,  pods map[string]*v1.Pod) 
 
 	for _, node := range nodes {
 		cpu := int(node.Status.Allocatable.Cpu().Value())
-
 		vertex := NewVertex(node.Name)
 		graph.AddVertex(vertex)
 		for _, podVtx := range source.GetOutEdges(){
@@ -276,6 +276,45 @@ func (graph *Graph) UpdateGraghForMaxFlow(path Path) Capacity{
 	return incrementFlow
 }
 
+func (graph *Graph) UpdateGraghForMaxFlow2(path Path) Capacity {
+	//fmt.Println("Need to update graph after getting path :"+path.GoString())
+
+	edgeNum := path.GetEdges().Len()
+	incrementFlow := NewCpuMemCapacity(-1, -1)
+
+	//如果是直接调度成功的
+	index := 0;
+	if edgeNum == 4 {
+		for e := path.GetEdges().Front(); e != nil; e = e.Next() {
+			edge := e.Value.(Edge)
+			if index == 0 {
+				incrementFlow = NewCpuMemCapacityWithCapacity(edge.GetCapacity())
+				break
+			}
+
+		}
+		for e := path.GetEdges().Front(); e != nil; e = e.Next() {
+			// remove flow capacity from the edge
+			value := e.Value.(Edge)
+			// get the edge in gragh, we need to update its capacity
+			edge, _ := graph.GetEdge(GetEdgeName(
+				value.GetFrom(), value.GetTo()))
+			if err := edge.GetCapacity().Sub(incrementFlow); err != nil {
+				fmt.Printf("capacity can't below 0 when updating capacity")
+				panic("capacity can't below 0 when updating capacity")
+			}
+		}
+
+	}
+
+	return incrementFlow
+}
+
+
+
+
+
+
 func (graph *Graph) AddVertex(vertex *Vertex) {
 	if IsNullVertex(vertex) &&
 		IsVertexExist(graph.GetVertices(), vertex.GetName()) {
@@ -359,7 +398,7 @@ func (graph *Graph) RemoveEdge(name string) (edge Edge, error error) {
 func (graph *Graph) PrintGragh(){
 	fmt.Println("**** Start print graph ****")
 	for _, edge := range graph.edges {
-		fmt.Println(edge.name+ ": " +edge.capacity.GoString())
+		fmt.Println(edge.name+ ": " +edge.capacity.GoString() + strconv.Itoa(edge.cost))
 	}
 	fmt.Println("**** End print graph ****")
 }
@@ -490,7 +529,7 @@ func NewCostEdge(cost int, capacity Capacity, from *Vertex, to *Vertex) *Edge {
 		capacity: capacity,
 		from:     from,
 		to:       to,
-		maxCapacity: NewIntCapacityWithCapacity(capacity)}
+		maxCapacity: NewCpuMemCapacityWithCapacity(capacity)}
 }
 
 func (edge *Edge) AddCost(cost int) {
@@ -547,6 +586,30 @@ func (edge *Edge) GetTo() *Vertex {
 	return edge.to
 }
 
+/************************************
+ *
+ *    Edge Slice for sorting edges
+ *
+ ************************************/
+
+
+type EdgeSlice []Edge
+
+func (es EdgeSlice) Len() int{
+	return len(es)
+}
+
+func (es EdgeSlice) Less(i, j int) bool{
+	return es[i].GetCost() < es[j].GetCost()
+}
+
+func (es EdgeSlice) Swap(i, j int) {
+	es[i], es[j] = es[j], es[i]
+}
+
+
+
+
 
 /************************************
  *
@@ -556,6 +619,7 @@ func (edge *Edge) GetTo() *Vertex {
 
  type Capacity interface {
 	 Less(capacity Capacity) bool
+	 GreatEqual(capacity Capacity) bool
 	 Add(capacity Capacity)
 	 Sub(capacity Capacity) error
 	 Sub2(capacity Capacity) (Capacity, error)
@@ -577,6 +641,15 @@ func NewIntCapacityWithCapacity(cap Capacity) Capacity{
 }
 
 func (cap *IntCapacity) Less(capacity Capacity) bool {
+	intCapacity := capacity.(*IntCapacity)
+	if  cap.value < intCapacity.value{
+		return true
+	}else {
+		return false
+	}
+}
+
+func (cap *IntCapacity) GreatEqual(capacity Capacity) bool {
 	intCapacity := capacity.(*IntCapacity)
 	if  cap.value < intCapacity.value{
 		return true
@@ -618,6 +691,85 @@ func (cap *IntCapacity) IsNull() bool{
 	return false
 }
 func (cap *IntCapacity) GoString() string {
-	goString := "Capacity : ["+strconv.Itoa(cap.value)+"]"
+	goString := "Capacity : [" + strconv.Itoa(cap.value) + "]"
 	return goString
 }
+
+
+ type CpuMemCapacity struct {
+ 	cpu int
+ 	mem int
+ }
+
+
+ func NewCpuMemCapacity(cpu int, mem int) Capacity{
+ 	return &CpuMemCapacity{cpu, mem}
+
+ }
+
+ func NewCpuMemCapacityWithCapacity(cap Capacity) Capacity {
+ 	cmCapacity := cap.(*CpuMemCapacity)
+ 	return &CpuMemCapacity{cmCapacity.cpu, cmCapacity.mem}
+ }
+
+ func (cap *CpuMemCapacity) Less(capacity Capacity) bool {
+ 	cmCapacity := capacity.(*CpuMemCapacity)
+ 	if cap.cpu < cmCapacity.cpu && cap.mem < cmCapacity.mem {
+ 		return true
+	}
+ 	return false
+ }
+
+func (cap *CpuMemCapacity) GreatEqual(capacity Capacity) bool {
+	cmCapacity := capacity.(*CpuMemCapacity)
+	if cap.cpu >= cmCapacity.cpu && cap.mem  >= cmCapacity.mem {
+		return true
+	}
+	return false
+}
+
+ func (cap *CpuMemCapacity) Add(capacity Capacity) {
+ 	cmCapacity := capacity.(*CpuMemCapacity)
+ 	cap.cpu += cmCapacity.cpu
+ 	cap.mem += cmCapacity.mem
+ 	return
+ }
+
+
+func (cap *CpuMemCapacity) Sub(capacity Capacity) error{
+	cmCapacity := capacity.(*CpuMemCapacity)
+	cap.cpu -= cmCapacity.cpu
+	cap.mem -= cmCapacity.mem
+	if cap.cpu < 0 || cap.mem < 0 {
+		cap.cpu += cmCapacity.cpu
+		cap.mem += cmCapacity.mem
+		return errors.New("capacity can't less 0")
+	}
+	return nil
+}
+
+
+ func (cap *CpuMemCapacity) Sub2(capacity Capacity) (Capacity, error) {
+ 	cmCapacity := capacity.(*CpuMemCapacity)
+ 	cpu := cap.cpu - cmCapacity.cpu
+ 	mem := cap.mem - cmCapacity.mem
+
+ 	if cap.cpu >= 0 && cap.mem >= 0 {
+ 		return NewCpuMemCapacity(cpu, mem), nil
+	}
+
+ 	return nil, errors.New("Capacity can't be less than 0")
+ }
+
+func (cap *CpuMemCapacity) IsNull() bool{
+	if cap.cpu <= 0 || cap.mem <= 0 {
+		return true
+	}
+	return false
+}
+func (cap *CpuMemCapacity) GoString() string {
+	goString := "Capacity : [" + strconv.Itoa(cap.cpu) + "," + strconv.Itoa(cap.mem) + "]"
+	return goString
+}
+
+

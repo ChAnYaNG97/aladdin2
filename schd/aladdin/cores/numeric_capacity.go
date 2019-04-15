@@ -27,6 +27,10 @@ func (nc NumericCapacity) Less(capacity Capacity) bool {
 	return nc.capacity < oc.capacity
 }
 
+func (nc NumericCapacity) GreatEqual(capacity Capacity) bool {
+	oc := capacity.(NumericCapacity)
+	return nc.capacity < oc.capacity
+}
 // please check the parameters (capacity) by yourself
 func (nc NumericCapacity) Add(capacity Capacity) {
 	oc := capacity.(NumericCapacity)

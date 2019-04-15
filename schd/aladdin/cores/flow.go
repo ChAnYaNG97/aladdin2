@@ -27,7 +27,7 @@ func (flow *Flow) AddFlow(capacity Capacity) {
 	//fmt.Println("------"+capacity.GoString())
 	if flow.capacity == nil {
 		//fmt.Println("flow capacity is nil")
-		flow.capacity = NewIntCapacityWithCapacity(capacity)
+		flow.capacity = NewCpuMemCapacityWithCapacity(capacity)
 		//fmt.Println(flow.GetFlow().GoString())
 	} else {
 		flow.capacity.Add(capacity)
